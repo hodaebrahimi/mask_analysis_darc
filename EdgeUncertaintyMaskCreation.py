@@ -37,9 +37,10 @@ def create_uncertainty_mask_with_certain(probability_mask_path, output_path_uint
         prob_data = nii_img.get_fdata().astype(np.float32)
         
         # Find different types of voxels
-        uncertain_mask = (prob_data > 0) & (prob_data < 1)  # Uncertain regions
-        certain_fg_mask = (prob_data == 1)  # Certain foreground
         background_mask = (prob_data == 0)  # Background
+        uncertain_mask = (prob_data > 0) & (prob_data < 1)  # Uncertain regions
+        # Certain foreground: all non-background pixels that aren't uncertain
+        certain_fg_mask = (prob_data > 0) & ~uncertain_mask  # More robust than prob_data == 1
         
         # Initialize uncertainty data with zeros
         uncertainty_float = np.zeros_like(prob_data, dtype=np.float32)
@@ -146,14 +147,14 @@ def create_uncertainty_histogram(uncertainty_data, case_id, output_dir, stats):
     # Create figure
     plt.figure(figsize=(10, 6))
     
-    # Create histogram
+    # Create normalized histogram
     n_bins = min(50, len(np.unique(non_zero_uncertainties)))
-    n, bins, patches = plt.hist(non_zero_uncertainties, bins=n_bins, alpha=0.7, color='skyblue', edgecolor='black')
+    n, bins, patches = plt.hist(non_zero_uncertainties, bins=n_bins, density=True, alpha=0.7, color='skyblue', edgecolor='black')
     
     # Customize plot
-    plt.title(f'Uncertainty Values Distribution - {case_id}', fontsize=14, fontweight='bold')
+    plt.title(f'Normalized Uncertainty Values Distribution - {case_id}', fontsize=14, fontweight='bold')
     plt.xlabel('Uncertainty Value', fontsize=12)
-    plt.ylabel('Number of Voxels', fontsize=12)
+    plt.ylabel('Probability Density', fontsize=12)
     plt.grid(True, alpha=0.3)
     
     # Add statistics text box
