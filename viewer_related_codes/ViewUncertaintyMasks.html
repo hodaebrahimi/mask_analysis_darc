@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uncertainty Viewer - IBD_0074</title>
+    <script src="https://unpkg.com/niivue@0.42.0/dist/niivue.umd.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #2c3e50;
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .case-info {
+            background: #e74c3c;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .case-info.least {
+            background: #27ae60;
+        }
+        .controls {
+            background: #34495e;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        .control-group {
+            margin-bottom: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        input[type="range"], select {
+            width: 100%;
+            padding: 5px;
+            border: none;
+            border-radius: 4px;
+            background: #2c3e50;
+            color: white;
+            border: 1px solid #7f8c8d;
+        }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 5px;
+            font-size: 12px;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        #niivue-container {
+            height: 600px;
+            border: 2px solid #7f8c8d;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #000;
+        }
+        .status {
+            background: #34495e;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .status.error { background: #e74c3c; }
+        .status.success { background: #27ae60; }
+        .debug-info {
+            background: #2c3e50;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            border: 1px solid #7f8c8d;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .colorbar {
+            display: flex;
+            align-items: center;
+            margin: 20px 0;
+            justify-content: center;
+        }
+        .colorbar-gradient {
+            width: 300px;
+            height: 25px;
+            background: linear-gradient(to right, 
+                rgba(0,0,255,1) 0%, rgba(0,255,255,1) 25%, rgba(255,255,0,1) 50%, 
+                rgba(255,128,0,1) 75%, rgba(255,0,0,1) 100%);
+            border: 2px solid #7f8c8d;
+            border-radius: 5px;
+            margin: 0 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Uncertainty Visualization - IBD_0074</h1>
+            <p>Enhanced viewer with forced display (FLOAT mask)</p>
+        </div>
+
+        <div class="case-info most">
+            <h3>IBD_0074 - Most Difficult Case</h3>
+            <p><strong>Volume:</strong> IBD_0074_0000.nii.gz | <strong>Mask:</strong> IBD_0074_uncertainty_mask_float.nii.gz</p>
+        </div>
+
+        <div class="status" id="status">
+            <strong>Status:</strong> Initializing...
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="opacitySlider">Overlay Opacity: <span id="opacityValue">0.7</span></label>
+                <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.7" oninput="updateOpacity()">
+            </div>
+
+            <div class="control-group">
+                <label for="colormapSelect">Colormap:</label>
+                <select id="colormapSelect" onchange="updateColormap()">
+                    <option value="red" selected>Red</option>
+                    <option value="blue2red">Blue to Red</option>
+                    <option value="hot">Hot</option>
+                    <option value="jet">Jet</option>
+                    <option value="plasma">Plasma</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="minSlider">Min Intensity: <span id="minValue">0</span></label>
+                <input type="range" id="minSlider" min="0" max="1" step="0.01" value="0" oninput="updateIntensity()">
+            </div>
+
+            <div class="control-group">
+                <label for="maxSlider">Max Intensity: <span id="maxValue">1</span></label>
+                <input type="range" id="maxSlider" min="0" max="1" step="0.01" value="1" oninput="updateIntensity()">
+            </div>
+
+            <div class="control-group">
+                <button onclick="loadFiles()">Reload Files</button>
+                <button onclick="forceDisplay()">Force Display</button>
+                <button onclick="showVolumeInfo()">Show Volume Info</button>
+                <button onclick="resetView()">Reset View</button>
+            </div>
+        </div>
+
+        <div id="niivue-container"></div>
+
+        <div class="colorbar">
+            <span>Low Uncertainty</span>
+            <div class="colorbar-gradient"></div>
+            <span>High Uncertainty</span>
+        </div>
+
+        <div class="debug-info" id="debug-info">
+            Debug information will appear here...
+        </div>
+    </div>
+
+    <script>
+        let nv = null;
+        let volumesLoaded = false;
+
+        function updateStatus(message, type = 'loading') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<strong>Status:</strong> ${message}`;
+            statusDiv.className = `status ${type}`;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function updateDebug(message) {
+            const debugDiv = document.getElementById('debug-info');
+            const timestamp = new Date().toLocaleTimeString();
+            debugDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+            debugDiv.scrollTop = debugDiv.scrollHeight;
+            console.log(`[DEBUG] ${message}`);
+        }
+
+        window.addEventListener('load', function() {
+            try {
+                if (typeof Niivue === 'undefined') {
+                    updateStatus('NiiVue library failed to load', 'error');
+                    return;
+                }
+
+                updateStatus('Initializing NiiVue viewer...', 'loading');
+                updateDebug('NiiVue library loaded successfully');
+
+                nv = new Niivue.Niivue();
+                nv.attachTo('niivue-container');
+
+                nv.opts.dragAndDropEnabled = false;
+                nv.opts.backColor = [0.1, 0.1, 0.1, 1];
+                nv.opts.crosshairColor = [1, 1, 1, 0.8];
+                nv.opts.show3Dcrosshair = true;
+                nv.opts.isColorbar = true;
+
+                updateStatus('NiiVue initialized, loading files...', 'loading');
+                updateDebug('NiiVue viewer initialized');
+
+                setTimeout(loadFiles, 500);
+
+            } catch (error) {
+                updateStatus(`Initialization failed: ${error.message}`, 'error');
+                updateDebug(`Init error: ${error.message}`);
+                console.error('Full error:', error);
+            }
+        });
+
+        async function loadFiles() {
+            if (!nv) {
+                updateStatus('NiiVue not initialized', 'error');
+                return;
+            }
+
+            try {
+                updateStatus('Loading volume and uncertainty mask...', 'loading');
+                updateDebug('Starting file load...');
+
+                nv.volumes = [];
+
+                const volumeList = [
+                    {
+                        url: './volume.nii.gz',
+                        name: 'Volume',
+                        colormap: 'gray',
+                        opacity: 1.0
+                    },
+                    {
+                        url: './mask.nii.gz',
+                        name: 'Uncertainty (FLOAT)',
+                        colormap: 'red',
+                        opacity: 0.7,
+                        cal_min: 0.0,
+                        cal_max: 1.0
+                    }
+                ];
+
+                await nv.loadVolumes(volumeList);
+
+                if (nv.volumes.length === 0) {
+                    throw new Error('No volumes loaded');
+                }
+
+                volumesLoaded = true;
+                updateStatus(`Successfully loaded ${nv.volumes.length} volumes`, 'success');
+                
+                nv.volumes.forEach((vol, idx) => {
+                    const dims = vol.dims || [0, 0, 0];
+                    const min = vol.global_min || 0;
+                    const max = vol.global_max || 0;
+                    updateDebug(`Vol ${idx}: ${vol.name}, ${dims.join('x')}, range: ${min.toFixed(4)}-${max.toFixed(4)}`);
+                });
+
+                setTimeout(forceDisplay, 200);
+
+            } catch (error) {
+                updateStatus(`Failed to load: ${error.message}`, 'error');
+                updateDebug(`Load error: ${error.message}`);
+                console.error('Full error:', error);
+            }
+        }
+
+        function forceDisplay() {
+            if (!nv || !volumesLoaded || nv.volumes.length < 2) {
+                updateDebug('Cannot force display - volumes not loaded');
+                return;
+            }
+
+            try {
+                const uncertaintyVol = nv.volumes[1];
+                
+                uncertaintyVol.cal_min = 0.0;
+                uncertaintyVol.cal_max = 1.0;
+                
+                nv.setColormap(1, 'red');
+                nv.setOpacity(1, 0.7);
+                nv.drawScene();
+                
+                updateDebug('Forced display settings applied');
+                updateStatus('Visualization ready! Use mouse to navigate.', 'success');
+                
+            } catch (error) {
+                updateDebug(`Force display error: ${error.message}`);
+            }
+        }
+
+        function updateOpacity() {
+            if (!volumesLoaded || nv.volumes.length < 2) return;
+            
+            const slider = document.getElementById('opacitySlider');
+            const value = slider.value;
+            document.getElementById('opacityValue').textContent = value;
+            
+            nv.setOpacity(1, parseFloat(value));
+            updateDebug(`Opacity: ${value}`);
+        }
+
+        function updateColormap() {
+            if (!volumesLoaded || nv.volumes.length < 2) return;
+            
+            const select = document.getElementById('colormapSelect');
+            const colormap = select.value;
+            
+            nv.setColormap(1, colormap);
+            updateDebug(`Colormap: ${colormap}`);
+        }
+
+        function updateIntensity() {
+            if (!volumesLoaded || nv.volumes.length < 2) return;
+            
+            const minSlider = document.getElementById('minSlider');
+            const maxSlider = document.getElementById('maxSlider');
+            const minVal = parseFloat(minSlider.value);
+            const maxVal = parseFloat(maxSlider.value);
+            
+            document.getElementById('minValue').textContent = minVal.toFixed(2);
+            document.getElementById('maxValue').textContent = maxVal.toFixed(2);
+            
+            const vol = nv.volumes[1];
+            vol.cal_min = minVal;
+            vol.cal_max = maxVal;
+            
+            nv.drawScene();
+            updateDebug(`Intensity: ${minVal.toFixed(2)}-${maxVal.toFixed(2)}`);
+        }
+
+        function showVolumeInfo() {
+            if (!volumesLoaded) return;
+
+            nv.volumes.forEach((vol, idx) => {
+                updateDebug(`Vol ${idx}: ${vol.name}, dims: ${vol.dims.join('x')}, min: ${vol.global_min.toFixed(4)}, max: ${vol.global_max.toFixed(4)}`);
+            });
+        }
+
+        function resetView() {
+            if (!nv) return;
+            
+            nv.scene.volScaleMultiplier = 1.0;
+            nv.scene.crosshairPos = [0.5, 0.5, 0.5];
+            nv.drawScene();
+            updateDebug('View reset');
+        }
+    </script>
+</body>
+</html>
